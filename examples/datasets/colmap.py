@@ -329,6 +329,23 @@ class Parser:
         scene_center = np.mean(camera_locations, axis=0)
         dists = np.linalg.norm(camera_locations - scene_center, axis=1)
         self.scene_scale = np.max(dists)
+        
+        self.cameras_json = []
+        for index, (camera_id, img_name, camtoworld) in enumerate(zip(self.camera_ids, self.image_names, self.camtoworlds)):
+            K = self.Ks_dict[camera_id]
+            self.cameras_json.append({
+                "id": index,
+                "img_name": img_name,
+                "width": self.imsize_dict[camera_id][0],
+                "height": self.imsize_dict[camera_id][1],
+                "position": camtoworld[:3, 3].tolist(),
+                "rotation": camtoworld[:3, :3].tolist(),
+                "fx": K[0, 0],
+                "fy": K[1, 1],
+                "cx": K[0, 2],
+                "cy": K[1, 2]
+            })
+
 
 
 class Dataset:

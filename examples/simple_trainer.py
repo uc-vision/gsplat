@@ -81,15 +81,15 @@ class Config:
     steps_scaler: float = 1.0
 
     # Number of training steps
-    max_steps: int = 30_000
+    max_steps: int = 60_000
     # Steps to evaluate the model
-    eval_steps: List[int] = field(default_factory=lambda: [7_000, 30_000])
+    eval_steps: List[int] = field(default_factory=lambda: [60_000])
     # Steps to save the model
-    save_steps: List[int] = field(default_factory=lambda: [7_000, 30_000])
+    save_steps: List[int] = field(default_factory=lambda: [60_000])
     # Whether to save ply file (storage size can be large)
-    save_ply: bool = False
+    save_ply: bool = True
     # Steps to save the model as ply
-    ply_steps: List[int] = field(default_factory=lambda: [7_000, 30_000])
+    ply_steps: List[int] = field(default_factory=lambda: [60_000])
 
     # Initialization strategy
     init_type: str = "sfm"
@@ -153,7 +153,7 @@ class Config:
     app_opt_reg: float = 1e-6
 
     # Enable bilateral grid. (experimental)
-    use_bilateral_grid: bool = False
+    use_bilateral_grid: bool = True
     # Shape of the bilateral grid (X, Y, W)
     bilateral_grid_shape: Tuple[int, int, int] = (16, 16, 8)
 
@@ -319,6 +319,13 @@ class Runner:
             patch_size=cfg.patch_size,
             load_depths=cfg.depth_loss,
         )
+        
+        with open(f"{cfg.result_dir}/cameras.json", "w") as f:
+            json.dump(self.parser.cameras_json, f, indent=4)
+        print(f"cameras.json saved at {cfg.result_dir}")
+        
+        self.cameras_json = {camera["id"]: camera for camera in self.parser.cameras_json}
+        
         self.valset = Dataset(self.parser, split="val")
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
@@ -593,6 +600,13 @@ class Runner:
 
             if cfg.pose_opt:
                 camtoworlds = self.pose_adjust(camtoworlds, image_ids)
+                self.cameras_json[image_ids.item()]["position"] = camtoworlds[0, :3, 3].detach().cpu().numpy().tolist()
+                self.cameras_json[image_ids.item()]["rotation"] = camtoworlds[0, :3, :3].detach().cpu().numpy().tolist()
+            
+            if step == max_steps - 1 and cfg.pose_opt:
+                with open(f"{cfg.result_dir}/optimized_cameras.json", "w") as f:
+                    json.dump(list(self.cameras_json.values()), f, indent=4)
+                print(f"updated cameras.json saved at {cfg.result_dir}")
 
             # sh schedule
             sh_degree_to_use = min(step // cfg.sh_degree_interval, cfg.sh_degree)
@@ -680,7 +694,7 @@ class Runner:
 
             loss.backward()
 
-            desc = f"loss={loss.item():.3f}| " f"sh degree={sh_degree_to_use}| "
+            desc = f"l1loss={l1loss}| ssimloss={ssimloss}| tvloss={tvloss}| loss={loss.item():.3f}| " f"sh degree={sh_degree_to_use}| "
             if cfg.depth_loss:
                 desc += f"depth loss={depthloss.item():.6f}| "
             if cfg.pose_opt and cfg.pose_noise:
